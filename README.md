@@ -37,11 +37,9 @@ Ou execute com `PYTHONPATH=.`:
 PYTHONPATH=. python -m colih_hourglass --help
 ```
 
-## Painel local (Windows — coordenador)
+## Fluxo rápido (Windows — 2 cliques + navegador)
 
-Substitui parte do fluxo manual em CMD por uma interface web em **português**, escutando apenas em `127.0.0.1` (não exponha na internet nem use em rede pública).
-
-1. Coloque as credenciais Supabase em um arquivo ao lado do clone, por exemplo `hourglass.env`:
+1. **Credenciais** — arquivo `scripts/hourglass.env` ou `.env` na raiz do clone (formato `KEY=valor`, uma por linha — sem `set`):
 
 ```ini
 SUPABASE_URL=https://xvriolmnmuezzarpwvwn.supabase.co
@@ -49,27 +47,15 @@ SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
 HOURGLASS_LGROUP=43741
 ```
 
-2. Na pasta do repositório Glebrito (CMD):
+2. **Painel** — duplo clique em `scripts\iniciar-painel.bat` (ou, na pasta Glebrito: `python -m colih_hourglass serve --env-file scripts\hourglass.env`).
 
-```cmd
-cd C:\caminho\para\Glebrito
-set PYTHONPATH=.
-python -m colih_hourglass serve --env-file hourglass.env
-```
+3. **Export no Hourglass** — login em [app.hourglass-app.com](https://app.hourglass-app.com/v2/page/app/scheduling/mm), DevTools → Snippets, cole e execute `scripts/hourglass-browser-export-snippet.js` (cópia canônica também no Agent Store em `scripts/hourglass-browser-export-snippet.js`). O `mm-export.json` inclui `schedules`, `privileges` e `users` (diretório de publicadores quando a API responde).
 
-Ou, se instalou com `pip install -e .`:
+4. **Importar e sugerir** — abra `http://127.0.0.1:8765/`, envie o JSON, gere sugestões. Nomes e sexo (incl. inferência nas partes apply1–3) vêm de `users`, privilégios e histórico.
 
-```cmd
-colih-hourglass serve --env-file hourglass.env --port 8765
-```
+**Segurança:** o painel escuta só em `127.0.0.1`; não exponha na internet.
 
-3. Abra no navegador: `http://127.0.0.1:8765/`
-
-O painel mostra o status das variáveis, permite **importar** o `mm-export.json` (mesma lógica de `import-rotation`), **sugerir** uma semana (com opção de gravar rascunho no Supabase) e **baixar** `sugestao.json` / rascunho. Partes 1–3 da reunião (regra das irmãs) aparecem destacadas na tabela.
-
-Para gerar o JSON no Hourglass, use o snippet do navegador `hourglass-browser-export-snippet.js` na pasta `scripts` do Project (ver `docs/hourglass-cli.md` no Agent Store).
-
-**Segurança:** o servidor aceita somente loopback; não faça port-forward nem publique esta porta.
+Documentação passo a passo no Project: `docs/configuracao-passo-a-passo.md`.
 
 ## Primeiro sync (recomendado no Windows)
 

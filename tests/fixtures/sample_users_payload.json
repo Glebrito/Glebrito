@@ -1,0 +1,14 @@
+{
+  "publishers": [
+    {
+      "id": 3035569,
+      "firstname": "Maria",
+      "lastname": "Silva",
+      "sex": "female"
+    },
+    {
+      "id": 3035547,
+      "descriptor": "Joao Santos"
+    }
+  ]
+}

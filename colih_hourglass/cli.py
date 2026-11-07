@@ -5,7 +5,7 @@ import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from .config import Settings
 from .rules_engine import (
@@ -48,6 +48,53 @@ def _load_members(sb: SupabaseClient, congregation_id: str) -> List[Member]:
             )
         )
     return out
+
+
+def _history_name_hints(history: List[Dict[str, Any]]) -> Dict[int, str]:
+    out: Dict[int, str] = {}
+    for h in history:
+        uid = h.get("hourglass_user_id")
+        name = h.get("assignee_name")
+        if uid is None or not name:
+            continue
+        if str(name).startswith("id:"):
+            continue
+        out[int(uid)] = str(name).strip()
+    return out
+
+
+def _enrich_member_display_names(members: List[Member], hints: Dict[int, str]) -> None:
+    for m in members:
+        if _looks_like_placeholder(m.display_name) and m.hourglass_user_id in hints:
+            m.display_name = hints[m.hourglass_user_id]
+
+
+def _looks_like_placeholder(name: Optional[str]) -> bool:
+    if not name:
+        return True
+    import re
+
+    return bool(re.match(r"^id:\d+$", str(name).strip(), re.I))
+
+
+def _enrich_suggestions(
+    suggestions: List[Dict[str, Any]],
+    hints: Dict[int, str],
+    members_by_uid: Dict[int, Member],
+) -> None:
+    for s in suggestions:
+        uid = s.get("hourglass_user_id")
+        dn = s.get("display_name")
+        if dn and not _looks_like_placeholder(dn):
+            continue
+        if uid is not None:
+            hint = hints.get(int(uid))
+            if hint:
+                s["display_name"] = hint
+                continue
+            mem = members_by_uid.get(int(uid))
+            if mem and not _looks_like_placeholder(mem.display_name):
+                s["display_name"] = mem.display_name
 
 
 def _eligible_map_from_privileges(priv_payload: Any) -> Dict[str, Set[str]]:
@@ -105,6 +152,9 @@ def run_suggest_week(
         order="week_date.desc",
         limit=5000,
     )
+    name_hints = _history_name_hints(history)
+    _enrich_member_display_names(members, name_hints)
+    members_by_uid = {m.hourglass_user_id: m for m in members}
     eligible: Dict[str, Set[str]] = {}
     suggestions = suggest_week(
         target_week=parse_week_date(week),
@@ -114,6 +164,7 @@ def run_suggest_week(
         eligible_by_category=eligible,
         categories=categories,
     )
+    _enrich_suggestions(suggestions, name_hints, members_by_uid)
 
     run_id = None
     if persist:

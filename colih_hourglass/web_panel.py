@@ -23,9 +23,9 @@ _state: Dict[str, Any] = {
 }
 
 DOCS_SNIPPET_HINT = (
-    "Exporte o JSON do Hourglass no navegador usando o snippet "
-    "`hourglass-browser-export-snippet.js` (ver documentação do Project: "
-    "`docs/hourglass-cli.md` e pasta `scripts/` do Agent Store)."
+    "Exporte o JSON do Hourglass no navegador com o snippet "
+    "`scripts/hourglass-browser-export-snippet.js` (também em `scripts/` do Agent Store). "
+    "Inicie o painel com `scripts/iniciar-painel.bat` (Windows) ou `python -m colih_hourglass serve --env-file`."
 )
 
 ROLE_LABELS_PT: Dict[str, str] = {
