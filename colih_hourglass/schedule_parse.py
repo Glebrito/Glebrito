@@ -10,15 +10,18 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, DefaultDict, Dict, Iterable, List, Optional, Set, Tuple
 
-# Importa do store quando disponível (evita duplicar 700+ linhas em produção)
+# hourglass_rotation_report.py vem no pacote; store Cursor é fallback opcional
+_PACKAGE_REPORT = Path(__file__).resolve().parent / "hourglass_rotation_report.py"
 _STORE_REPORT = Path("/cursor/stores/self/scripts/hourglass_rotation_report.py")
 
 
 def _load_rotation_module():
-    if _STORE_REPORT.is_file():
-        import importlib.util
+    import importlib.util
 
-        spec = importlib.util.spec_from_file_location("hourglass_rotation_report", _STORE_REPORT)
+    for report_path in (_PACKAGE_REPORT, _STORE_REPORT):
+        if not report_path.is_file():
+            continue
+        spec = importlib.util.spec_from_file_location("hourglass_rotation_report", report_path)
         if spec and spec.loader:
             mod = importlib.util.module_from_spec(spec)
             sys.modules["hourglass_rotation_report"] = mod
