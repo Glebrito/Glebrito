@@ -14,7 +14,7 @@ Documentação de arquitetura (Project store): `/cursor/stores/self/docs/supabas
 
 1. Aplicar a migration em `supabase/migrations/20251107120000_hourglass_core.sql` (SQL Editor do Supabase ou Supabase CLI).
 
-2. Variáveis de ambiente (Cursor Secrets ou `.env` local — **nunca** commitar):
+2. Variáveis de ambiente (Cursor Secrets, arquivo local `.env` / `hourglass.env` — **nunca** commitar):
 
 ```bash
 export SUPABASE_URL=https://xvriolmnmuezzarpwvwn.supabase.co
@@ -36,6 +36,40 @@ Ou execute com `PYTHONPATH=.`:
 ```bash
 PYTHONPATH=. python -m colih_hourglass --help
 ```
+
+## Painel local (Windows — coordenador)
+
+Substitui parte do fluxo manual em CMD por uma interface web em **português**, escutando apenas em `127.0.0.1` (não exponha na internet nem use em rede pública).
+
+1. Coloque as credenciais Supabase em um arquivo ao lado do clone, por exemplo `hourglass.env`:
+
+```ini
+SUPABASE_URL=https://xvriolmnmuezzarpwvwn.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
+HOURGLASS_LGROUP=43741
+```
+
+2. Na pasta do repositório Glebrito (CMD):
+
+```cmd
+cd C:\caminho\para\Glebrito
+set PYTHONPATH=.
+python -m colih_hourglass serve --env-file hourglass.env
+```
+
+Ou, se instalou com `pip install -e .`:
+
+```cmd
+colih-hourglass serve --env-file hourglass.env --port 8765
+```
+
+3. Abra no navegador: `http://127.0.0.1:8765/`
+
+O painel mostra o status das variáveis, permite **importar** o `mm-export.json` (mesma lógica de `import-rotation`), **sugerir** uma semana (com opção de gravar rascunho no Supabase) e **baixar** `sugestao.json` / rascunho. Partes 1–3 da reunião (regra das irmãs) aparecem destacadas na tabela.
+
+Para gerar o JSON no Hourglass, use o snippet do navegador `hourglass-browser-export-snippet.js` na pasta `scripts` do Project (ver `docs/hourglass-cli.md` no Agent Store).
+
+**Segurança:** o servidor aceita somente loopback; não faça port-forward nem publique esta porta.
 
 ## Primeiro sync (recomendado no Windows)
 
@@ -87,13 +121,17 @@ python hourglass_cli.py schedule put-core --date 2026-11-02 --apply --body-file 
 
 ```bash
 cd /agent/repos/Glebrito
-PYTHONPATH=. python -m unittest tests.test_rules_engine -v
+PYTHONPATH=. python -m unittest discover -s tests -v
 ```
 
 ## Estrutura
 
 ```
-colih_hourglass/     # sync, regras, CLI
+colih_hourglass/     # sync, regras, CLI, painel web local
 supabase/migrations/ # schema Colih
-tests/               # testes do motor de regras
+tests/               # testes do motor de regras e painel
 ```
+
+### Cursor App (futuro)
+
+O painel local cobre o fluxo do coordenador no PC. Uma versão publicada no Cursor poderia reutilizar a mesma lógica (`import_rotation_file`, `run_suggest_week`) por trás de rotas HTTP no app publicado, com `bind-app-secrets` para Supabase — fora do escopo desta entrega.

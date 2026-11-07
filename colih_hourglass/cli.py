@@ -79,11 +79,15 @@ def cmd_import_rotation(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def cmd_suggest_next(args: argparse.Namespace) -> None:
-    settings = Settings.from_env()
+def run_suggest_week(
+    settings: Settings,
+    *,
+    week: str | None = None,
+    persist: bool = False,
+    categories: List[str] | None = None,
+) -> Dict[str, Any]:
     sb = SupabaseClient(settings)
     congregation_id = sb.congregation_id_for_lgroup(settings.lgroup)
-    week = args.week
     if not week:
         week = (datetime.utcnow().date() + timedelta(days=(7 - datetime.utcnow().weekday()))).isoformat()
 
@@ -108,11 +112,11 @@ def cmd_suggest_next(args: argparse.Namespace) -> None:
         history=history,
         rules=rules,
         eligible_by_category=eligible,
-        categories=args.categories.split(",") if args.categories else None,
+        categories=categories,
     )
 
     run_id = None
-    if args.persist:
+    if persist:
         for s in suggestions:
             s["congregation_id"] = congregation_id
             s["suggestion_run_id"] = run_id
@@ -134,8 +138,18 @@ def cmd_suggest_next(args: argparse.Namespace) -> None:
             on_conflict="congregation_id,week_date,role_category",
         )
 
+    return {"week": week, "lgroup": settings.lgroup, "suggestions": suggestions}
+
+
+def cmd_suggest_next(args: argparse.Namespace) -> None:
+    settings = Settings.from_env()
+    doc = run_suggest_week(
+        settings,
+        week=args.week,
+        persist=args.persist,
+        categories=args.categories.split(",") if args.categories else None,
+    )
     out_path = Path(args.out) if args.out else None
-    doc = {"week": week, "lgroup": settings.lgroup, "suggestions": suggestions}
     text = json.dumps(doc, indent=2, ensure_ascii=False)
     if out_path:
         out_path.write_text(text + "\n", encoding="utf-8")
@@ -144,17 +158,16 @@ def cmd_suggest_next(args: argparse.Namespace) -> None:
         print(text)
 
 
-def cmd_export_draft(args: argparse.Namespace) -> None:
-    settings = Settings.from_env()
+def build_draft_export(settings: Settings, week: str, status: str = "draft") -> Dict[str, Any]:
     sb = SupabaseClient(settings)
     congregation_id = sb.congregation_id_for_lgroup(settings.lgroup)
-    filters = f"congregation_id=eq.{congregation_id}&week_date=eq.{args.week}"
-    if args.status:
-        filters += f"&status=eq.{args.status}"
+    filters = f"congregation_id=eq.{congregation_id}&week_date=eq.{week}"
+    if status:
+        filters += f"&status=eq.{status}"
     drafts = sb.select("draft_assignments", filters=filters, order="role_category.asc")
-    export = {
+    return {
         "meta": {
-            "week": args.week,
+            "week": week,
             "lgroup": settings.lgroup,
             "exported_at": datetime.utcnow().isoformat() + "Z",
             "hourglass_apply": "stub — use week_after + schedule put-core --body-file no PC",
@@ -166,9 +179,25 @@ def cmd_export_draft(args: argparse.Namespace) -> None:
             if d.get("hourglass_user_id")
         },
     }
+
+
+def cmd_export_draft(args: argparse.Namespace) -> None:
+    settings = Settings.from_env()
+    export = build_draft_export(settings, args.week, args.status or "draft")
     out = Path(args.out) if args.out else Path(f"draft-{args.week}.json")
     out.write_text(json.dumps(export, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"Rascunho exportado: {out}")
+
+
+def cmd_serve(args: argparse.Namespace) -> None:
+    if args.env_file:
+        from .env_loader import load_env_file
+
+        n = load_env_file(Path(args.env_file))
+        print(f"Variáveis carregadas de {args.env_file}: {n} novas chave(s).")
+    from .web_panel import run_server
+
+    run_server(host="127.0.0.1", port=args.port)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -200,6 +229,14 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--status", default="draft")
     ex.add_argument("--out")
     ex.set_defaults(func=cmd_export_draft)
+
+    sv = sub.add_parser("serve", help="Painel web local (127.0.0.1)")
+    sv.add_argument("--port", type=int, default=8765, help="Porta TCP (padrão 8765)")
+    sv.add_argument(
+        "--env-file",
+        help="Arquivo .env ou hourglass.env (KEY=valor) antes de iniciar o servidor",
+    )
+    sv.set_defaults(func=cmd_serve)
 
     return p
 
