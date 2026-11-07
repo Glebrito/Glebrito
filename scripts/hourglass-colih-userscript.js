@@ -1,18 +1,18 @@
 // ==UserScript==
 // @name         Colih — Atualizar Supabase (Hourglass)
 // @namespace    glebrito-colih
-// @version      1.0.0
+// @version      1.0.1
 // @description  Um botão no Hourglass envia o export MM ao painel local Colih (127.0.0.1).
 // @match        https://app.hourglass-app.com/*
-// @run-at       document-idle
+// @run-at       document-end
 // @grant        none
 // ==/UserScript==
 
 (function colihHourglassUserscript() {
   "use strict";
 
-  if (window.__colihHourglassUi) return;
-  window.__colihHourglassUi = true;
+  if (window.__colihHourglassBoot) return;
+  window.__colihHourglassBoot = true;
 
   const FROM = "2025-04-01";
   const TO = "2026-12-31";
@@ -88,6 +88,13 @@
   }
 
   function mountUi() {
+    if (document.getElementById(UI_ID)) {
+      window.__colihHourglassUi = true;
+      return true;
+    }
+    const parent = document.body;
+    if (!parent) return false;
+
     ensureStyles();
     const root = document.createElement("div");
     root.id = UI_ID;
@@ -95,11 +102,40 @@
     root.innerHTML =
       '<div id="colih-hg-toast" role="status"></div>' +
       '<button type="button" id="colih-hg-btn">Atualizar Supabase</button>';
-    document.documentElement.appendChild(root);
+    parent.appendChild(root);
 
     const btn = root.querySelector("#colih-hg-btn");
     const toast = root.querySelector("#colih-hg-toast");
     btn.addEventListener("click", () => runUpdate(btn, toast));
+    window.__colihHourglassUi = true;
+    return true;
+  }
+
+  function watchForSpaRemoval() {
+    if (!document.body || window.__colihHourglassSpaWatch) return;
+    window.__colihHourglassSpaWatch = true;
+    const obs = new MutationObserver(() => {
+      if (!document.getElementById(UI_ID)) mountUi();
+    });
+    obs.observe(document.body, { childList: true });
+  }
+
+  function scheduleMountWithRetries() {
+    const delays = [0, 1000, 3000];
+    let step = 0;
+
+    function attempt() {
+      if (mountUi()) {
+        watchForSpaRemoval();
+        return;
+      }
+      step += 1;
+      if (step < delays.length) {
+        setTimeout(attempt, delays[step]);
+      }
+    }
+
+    setTimeout(attempt, delays[0]);
   }
 
   function showToast(el, text, kind) {
@@ -249,5 +285,5 @@
     }
   }
 
-  mountUi();
+  scheduleMountWithRetries();
 })();
