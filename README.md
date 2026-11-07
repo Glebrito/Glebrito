@@ -68,6 +68,8 @@ O comando baixa meeting + schedule + privileges + users da API (cabeçalhos igua
 
 **Fallback (sem sessão):** snippet `hourglass-browser-export-snippet.js` + `import-rotation mm-export.json`, ou painel local opcional (`iniciar-painel.bat`, só `127.0.0.1`).
 
+**Chrome (um clique):** com o painel ligado, Tampermonkey ou favorito (`hourglass-colih-userscript.js` / `hourglass-colih-bookmarklet.url`) → botão **Atualizar Supabase** em app.hourglass-app.com.
+
 Documentação: `docs/configuracao-passo-a-passo.md` no Project store.
 
 ## Sugestão da próxima semana
