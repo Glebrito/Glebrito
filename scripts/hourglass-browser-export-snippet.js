@@ -4,6 +4,7 @@
 const FROM = "2025-04-01";
 const TO = "2026-12-31";
 const LGROUP = 43741;
+const COLIH_IMPORT = "http://127.0.0.1:8765/import-json";
 
 const xsrf = document.cookie.match(/X-Hourglass-XSRF-Token=([^;]+)/)?.[1];
 if (!xsrf) {
@@ -89,11 +90,41 @@ const payload = {
   users,
 };
 
-const blob = new Blob([JSON.stringify(payload, null, 2)], {
-  type: "application/json",
-});
-const a = document.createElement("a");
-a.href = URL.createObjectURL(blob);
-a.download = "mm-export.json";
-a.click();
-console.log("Download mm-export.json iniciado", users ? "(com users)" : "(sem users — nomes via privileges/histórico)");
+function downloadMmExport(data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json",
+  });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "mm-export.json";
+  a.click();
+}
+
+let importedOnColih = false;
+try {
+  const r = await fetch(COLIH_IMPORT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (r.ok) {
+    importedOnColih = true;
+    const info = await r.json().catch(() => ({}));
+    console.log("Importado no Colih", info);
+    alert("Importado no Colih");
+    if (confirm("Baixar também uma cópia local (mm-export.json)?")) {
+      downloadMmExport(payload);
+    }
+  } else {
+    throw new Error(`Colih HTTP ${r.status}`);
+  }
+} catch (e) {
+  console.warn("Envio ao painel Colih falhou — download manual", e);
+  alert("Painel offline — baixou mm-export");
+  downloadMmExport(payload);
+}
+
+console.log(
+  importedOnColih ? "Fluxo Colih concluído." : "Download mm-export.json iniciado",
+  users ? "(com users)" : "(sem users — nomes via privileges/histórico)",
+);

@@ -37,9 +37,9 @@ Ou execute com `PYTHONPATH=.`:
 PYTHONPATH=. python -m colih_hourglass --help
 ```
 
-## Fluxo rápido (Windows — 2 cliques + navegador)
+## Fluxo rápido (Windows — terminal, recomendado)
 
-1. **Credenciais** — arquivo `scripts/hourglass.env` ou `.env` na raiz do clone (formato `KEY=valor`, uma por linha — sem `set`):
+1. **Credenciais** — `scripts\hourglass.env` no Agent Store (ou `scripts\hourglass.env` no clone Glebrito):
 
 ```ini
 SUPABASE_URL=https://xvriolmnmuezzarpwvwn.supabase.co
@@ -47,37 +47,28 @@ SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
 HOURGLASS_LGROUP=43741
 ```
 
-2. **Painel** — duplo clique em `scripts\iniciar-painel.bat` (ou, na pasta Glebrito: `python -m colih_hourglass serve --env-file scripts\hourglass.env`).
-
-3. **Export no Hourglass** — login em [app.hourglass-app.com](https://app.hourglass-app.com/v2/page/app/scheduling/mm), DevTools → Snippets, cole e execute `scripts/hourglass-browser-export-snippet.js` (cópia canônica também no Agent Store em `scripts/hourglass-browser-export-snippet.js`). O `mm-export.json` inclui `schedules`, `privileges` e `users` (diretório de publicadores quando a API responde).
-
-4. **Importar e sugerir** — abra `http://127.0.0.1:8765/`, envie o JSON, gere sugestões. Nomes e sexo (incl. inferência nas partes apply1–3) vêm de `users`, privilégios e histórico.
-
-**Segurança:** o painel escuta só em `127.0.0.1`; não exponha na internet.
-
-Documentação passo a passo no Project: `docs/configuracao-passo-a-passo.md`.
-
-## Primeiro sync (recomendado no Windows)
-
-Na pasta onde está o `hourglass_cli.py` do Project:
+2. **Sessão Hourglass** (uma vez, ou quando der HTTP 401) — na pasta `scripts` do Project:
 
 ```cmd
-python hourglass_cli.py session save --curl-file hourglass.curl
-python hourglass_cli.py whoami
-python hourglass_cli.py fetch all --from 2025-04-01 --to 2026-12-31 --lgroup 43741 --out mm-export.json
+python hourglass_cli.py session save --curl-file hourglass.curl.txt
 ```
 
-No repositório Glebrito (com secrets Supabase):
+Grava `scripts\.hourglass-session.json`.
 
-```bash
-PYTHONPATH=. python -m colih_hourglass import-rotation /caminho/mm-export.json
+3. **Rodízio** — duplo clique em `scripts\rodizio.bat` (Store) ou `scripts\rodizio.bat` (repo):
+
+```cmd
+scripts\rodizio.bat
+scripts\rodizio.bat 2026-11-09
 ```
 
-Sync direto pela API (mesma máquina com sessão válida):
+Equivale a `python -m colih_hourglass atualizar --env-file scripts\hourglass.env --suggest` (próxima segunda) ou `--week` com data.
 
-```bash
-PYTHONPATH=. python -m colih_hourglass sync --from 2025-04-01 --to 2026-12-31
-```
+O comando baixa meeting + schedule + privileges + users da API (cabeçalhos iguais ao `hourglass_cli.py`), grava no Supabase e imprime tabela markdown com nomes reais.
+
+**Fallback (sem sessão):** snippet `hourglass-browser-export-snippet.js` + `import-rotation mm-export.json`, ou painel local opcional (`iniciar-painel.bat`, só `127.0.0.1`).
+
+Documentação: `docs/configuracao-passo-a-passo.md` no Project store.
 
 ## Sugestão da próxima semana
 

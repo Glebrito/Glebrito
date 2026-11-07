@@ -11,6 +11,11 @@ from urllib.request import Request, urlopen
 
 DEFAULT_BASE = "https://app.hourglass-app.com"
 API_VERSION = "/api/v0.2"
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 
 
 def resolve_session_path(explicit: Optional[Path] = None) -> Optional[Path]:
@@ -21,13 +26,28 @@ def resolve_session_path(explicit: Optional[Path] = None) -> Optional[Path]:
         p = Path(env).expanduser()
         if p.is_file():
             return p
+    repo_scripts = Path(__file__).resolve().parent.parent / "scripts" / ".hourglass-session.json"
     for p in (
+        repo_scripts,
         Path("/cursor/stores/self/.hourglass-session.json"),
         Path("/cursor/stores/self/scripts/.hourglass-session.json"),
     ):
         if p.is_file():
             return p
     return None
+
+
+def _api_headers(session: Dict[str, str]) -> Dict[str, str]:
+    headers = {
+        "Cookie": session["cookie"],
+        "Accept": "application/json",
+        "User-Agent": _USER_AGENT,
+        "Origin": DEFAULT_BASE,
+        "Referer": f"{DEFAULT_BASE}/v2/page/app/scheduling/mm",
+    }
+    if session.get("xsrf"):
+        headers["X-Hourglass-XSRF-Token"] = session["xsrf"]
+    return headers
 
 
 def load_session(path: Path) -> Dict[str, str]:
@@ -45,23 +65,37 @@ def load_session(path: Path) -> Dict[str, str]:
     return {"cookie": cookie, "xsrf": xsrf, "base": base}
 
 
-def api_get(session: Dict[str, str], path: str) -> Any:
+def api_request(
+    session: Dict[str, str],
+    method: str,
+    path: str,
+    body: Any = None,
+) -> Any:
     url = f"{session['base']}{API_VERSION}{path}"
-    headers = {
-        "Cookie": session["cookie"],
-        "X-Hourglass-XSRF-Token": session["xsrf"],
-        "Accept": "application/json",
-    }
-    req = Request(url, headers=headers, method="GET")
+    data: Optional[bytes] = None
+    headers = _api_headers(session)
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers = {**headers, "Content-Type": "application/json"}
+    req = Request(url, data=data, headers=headers, method=method.upper())
     try:
         with urlopen(req, timeout=120) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            raw = resp.read().decode("utf-8")
+            if not raw.strip():
+                return None
+            return json.loads(raw)
     except HTTPError as exc:
         if exc.code == 401:
-            raise RuntimeError(
-                "Hourglass HTTP 401 — sessão expirada. No PC: python hourglass_cli.py session save --curl-file hourglass.curl"
-            ) from exc
-        raise RuntimeError(f"Hourglass GET {path}: HTTP {exc.code}") from exc
+            raise RuntimeError("Hourglass HTTP 401 — sessão expirada ou inválida.") from exc
+        raise RuntimeError(f"Hourglass {method.upper()} {path}: HTTP {exc.code}") from exc
+
+
+def api_get(session: Dict[str, str], path: str) -> Any:
+    return api_request(session, "GET", path)
+
+
+def api_post(session: Dict[str, str], path: str, body: Any = None) -> Any:
+    return api_request(session, "POST", path, body if body is not None else {})
 
 
 def fetch_schedule(session: Dict[str, str], date_from: str, date_to: str, lgroup: int) -> Any:
@@ -76,6 +110,26 @@ def fetch_meeting(session: Dict[str, str], date_from: str, date_to: str, lgroup:
     return api_get(
         session,
         f"/scheduling/mm/meeting/{date_from}_{date_to}?lgroup={lgroup}&no_subs=true",
+    )
+
+
+def fetch_users_directory(session: Dict[str, str], lgroup: int) -> Any:
+    """Diretório de publicadores (POST users ou fallback fsreport/startup)."""
+    try:
+        return api_post(session, f"/scheduling/users?lgroup={lgroup}", {})
+    except RuntimeError:
+        pass
+    try:
+        return api_get(session, "/fsreport/startup")
+    except RuntimeError:
+        return None
+
+
+def session_setup_help_pt() -> str:
+    return (
+        "1. Hourglass logado → F12 → Rede → copie cURL para scripts\\hourglass.curl.txt\n"
+        "2. python scripts\\hourglass_cli.py session save --curl-file scripts\\hourglass.curl.txt\n"
+        "3. Arquivo gerado: scripts\\.hourglass-session.json (ou HG_SESSION apontando para ele)"
     )
 
 

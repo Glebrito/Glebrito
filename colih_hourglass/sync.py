@@ -11,6 +11,7 @@ from .hourglass_api import (
     fetch_meeting,
     fetch_privileges,
     fetch_schedule,
+    fetch_users_directory,
     load_json_file,
     load_session,
     resolve_session_path,
@@ -406,6 +407,7 @@ def sync_from_hourglass(
     session = load_session(path)
     schedule = fetch_schedule(session, date_from, date_to, settings.lgroup)
     priv = fetch_privileges(session, settings.lgroup)
+    users = fetch_users_directory(session, settings.lgroup)
     try:
         meeting = fetch_meeting(session, date_from, date_to, settings.lgroup)
     except RuntimeError:
@@ -415,6 +417,7 @@ def sync_from_hourglass(
         schedule_payload=schedule,
         privileges_payload=priv,
         meeting_payload=meeting,
+        users_payload=users,
         source="hourglass_api",
     )
 

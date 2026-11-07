@@ -1,11 +1,15 @@
+import json
 import os
+import threading
 import unittest
+from http.client import HTTPConnection
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from colih_hourglass.env_loader import load_env_file
-from colih_hourglass.web_panel import _page, env_status
+from colih_hourglass.web_panel import PanelHandler, _page, env_status, panel_public_status
+from http.server import ThreadingHTTPServer
 
 
 class TestEnvLoader(unittest.TestCase):
@@ -32,9 +36,9 @@ class TestPageSmoke(unittest.TestCase):
     def test_page_renders_pt_br(self):
         st = env_status()
         body = _page(st, message="ok")
-        self.assertIn(b"Painel local", body)
+        self.assertIn("Rodízio Hourglass".encode("utf-8"), body)
         self.assertIn(b"pt-BR", body)
-        self.assertIn(b"Importar export JSON", body)
+        self.assertIn(b"import-json", body)
 
     def test_apply_rows_highlighted_in_markup(self):
         st = env_status()
@@ -44,6 +48,50 @@ class TestPageSmoke(unittest.TestCase):
         }
         body = _page(st, suggestions=doc)
         self.assertIn(b"apply-sister", body)
+        self.assertIn(b"Maria", body)
+
+    def test_panel_public_status_shape(self):
+        st = panel_public_status()
+        self.assertIn("ok", st)
+        self.assertIn("supabase_configured", st)
+
+
+class TestImportJsonHandler(unittest.TestCase):
+    def test_import_json_smoke(self):
+        fake_result = {"status": "ok", "stats": {"members": 1}}
+        payload = {
+            "meta": {"lgroup": 43741},
+            "schedules": {},
+            "privileges": {},
+        }
+
+        def serve():
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), PanelHandler)
+            httpd.timeout = 2
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            port = httpd.server_address[1]
+            with patch(
+                "colih_hourglass.web_panel._try_settings",
+                return_value=(object(), None),
+            ), patch(
+                "colih_hourglass.web_panel.import_rotation_file",
+                return_value=fake_result,
+            ):
+                conn = HTTPConnection("127.0.0.1", port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/import-json",
+                    body=json.dumps(payload),
+                    headers={"Content-Type": "application/json"},
+                )
+                resp = conn.getresponse()
+                body = json.loads(resp.read().decode())
+                conn.close()
+            httpd.shutdown()
+            self.assertEqual(resp.status, 200)
+            self.assertTrue(body.get("ok"))
+            self.assertEqual(body.get("message"), "Importado no Colih")
 
 
 if __name__ == "__main__":
