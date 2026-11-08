@@ -15,6 +15,12 @@ from .rules_engine import (
     load_rules_from_db,
     suggest_week,
 )
+from .hourglass_rotation_report import (
+    CATEGORY_LABELS_PT,
+    PRIVILEGE_TO_CATEGORIES,
+    ROLE_ALIASES,
+    _slug_privilege,
+)
 from .schedule_parse import parse_privileges, parse_week_date
 from .hourglass_api import load_session, resolve_session_path, session_setup_help_pt
 from .sync import import_rotation_file, sync_from_hourglass
@@ -122,6 +128,29 @@ def print_suggestions_markdown(doc: Dict[str, Any]) -> None:
     print()
 
 
+def _categories_for_privilege(privilege: str) -> Set[str]:
+    slug = _slug_privilege(str(privilege))
+    if not slug:
+        return set()
+    cats = PRIVILEGE_TO_CATEGORIES.get(slug, {slug} if slug in CATEGORY_LABELS_PT else set())
+    if not cats and slug in ROLE_ALIASES:
+        cats = {ROLE_ALIASES[slug]}
+    return set(cats)
+
+
+def _eligible_map_from_members(members: List[Member]) -> Dict[str, Set[str]]:
+    """Monta categoria → hourglass_user_id a partir dos privilégios gravados no sync."""
+    out: Dict[str, Set[str]] = {}
+    for m in members:
+        if not m.hourglass_user_id:
+            continue
+        uid = str(m.hourglass_user_id)
+        for priv in m.privileges or ():
+            for cat in _categories_for_privilege(priv):
+                out.setdefault(cat, set()).add(uid)
+    return out
+
+
 def _eligible_map_from_privileges(priv_payload: Any) -> Dict[str, Set[str]]:
     if not priv_payload:
         return {}
@@ -129,11 +158,7 @@ def _eligible_map_from_privileges(priv_payload: Any) -> Dict[str, Set[str]]:
         _names, eligible = parse_privileges(priv_payload)
     except Exception:
         return {}
-    # Converter categorias → ids hourglass
-    out: Dict[str, Set[str]] = {}
-    for cat, ids in eligible.items():
-        out[cat] = set(str(x) for x in ids)
-    return out
+    return {cat: {str(x) for x in ids} for cat, ids in eligible.items()}
 
 
 def cmd_sync(args: argparse.Namespace) -> None:
@@ -239,7 +264,7 @@ def run_suggest_week(
     name_hints = _history_name_hints(history)
     _enrich_member_display_names(members, name_hints)
     members_by_uid = {m.hourglass_user_id: m for m in members}
-    eligible: Dict[str, Set[str]] = {}
+    eligible = _eligible_map_from_members(members)
     suggestions = suggest_week(
         target_week=parse_week_date(week),
         members=members,
