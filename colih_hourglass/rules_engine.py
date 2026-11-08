@@ -149,9 +149,7 @@ def eligible_for_category(
             continue
         uid = str(m.hourglass_user_id)
         if eligible_ids is not None and uid not in eligible_ids and m.id not in eligible_ids:
-            # privileges opcionais: se vazio, aceita quem apareceu no schedule
-            if eligible_ids:
-                continue
+            continue
         if category in rules.sisters_only_categories and not is_sister(m):
             continue
         out.append(m)
