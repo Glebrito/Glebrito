@@ -587,6 +587,55 @@ def parse_users(payload: Any) -> Dict[str, str]:
     return names
 
 
+def _sex_from_dict(d: Dict[str, Any]) -> Optional[str]:
+    raw = d.get("sex") or d.get("gender")
+    if raw is None:
+        return None
+    v = str(raw).strip().lower()
+    if v in ("female", "f", "feminino", "woman", "w"):
+        return "Female"
+    if v in ("male", "m", "masculino", "man"):
+        return "Male"
+    return None
+
+
+def parse_sex_from_users(payload: Any) -> Dict[int, str]:
+    """Mapeia hourglass user id → Female/Male a partir do export users/publishers."""
+    sex: Dict[int, str] = {}
+
+    def record(obj: Dict[str, Any]) -> None:
+        uid = None
+        for id_field in ("id", "user_id", "publisher_id"):
+            if obj.get(id_field) is not None:
+                try:
+                    uid = int(obj[id_field])
+                except (TypeError, ValueError):
+                    return
+                break
+        if uid is None or uid <= 0:
+            return
+        s = _sex_from_dict(obj)
+        if s:
+            sex[uid] = s
+
+    def walk(obj: Any, depth: int = 0) -> None:
+        if depth > 10:
+            return
+        if isinstance(obj, list):
+            for item in obj:
+                walk(item, depth + 1)
+        elif isinstance(obj, dict):
+            if USER_OBJECT_HINTS.intersection(obj.keys()) or (
+                obj.get("id") is not None and (obj.get("descriptor") or obj.get("firstname"))
+            ):
+                record(obj)
+            for val in obj.values():
+                walk(val, depth + 1)
+
+    walk(payload)
+    return sex
+
+
 def merge_eligible_for_category(
     category: str,
     counts: Dict[str, int],

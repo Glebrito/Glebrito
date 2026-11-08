@@ -22,6 +22,7 @@ from .schedule_parse import (
     iter_assignments_from_week,
     parse_all_assignments,
     parse_privileges,
+    parse_sex_from_users,
     parse_users,
 )
 from .supabase_client import SupabaseClient
@@ -212,11 +213,23 @@ def members_from_privileges(
     return rows
 
 
+def _merge_sex_by_id(
+    inferred: Dict[int, str],
+    from_users: Dict[int, str],
+) -> Dict[int, str]:
+    out = dict(inferred)
+    for uid, sex in from_users.items():
+        out[uid] = _pick_better_sex(out.get(uid), sex)
+    return out
+
+
 def upsert_members_and_map(
     sb: SupabaseClient,
     congregation_id: str,
     member_rows: List[Dict[str, Any]],
     id_names: Dict[str, str],
+    *,
+    sex_by_id: Optional[Dict[int, str]] = None,
 ) -> Dict[int, str]:
     """Garante members para todos os ids vistos; retorna hourglass_user_id → member uuid."""
     existing = sb.select(
@@ -240,20 +253,23 @@ def upsert_members_and_map(
             "updated_at": _utc_now(),
         }
 
+    sex_by_id = sex_by_id or {}
     for hid_str, label in id_names.items():
         try:
             hid = int(hid_str)
         except ValueError:
             continue
+        sex_hint = _pick_better_sex(None, sex_by_id.get(hid))
         if hid in merged:
             merged[hid]["display_name"] = _pick_better_name(merged[hid]["display_name"], label)
+            merged[hid]["sex"] = _pick_better_sex(merged[hid].get("sex"), sex_hint)
             continue
         prev = by_hid.get(hid, {})
         merged[hid] = {
             "congregation_id": congregation_id,
             "hourglass_user_id": hid,
             "display_name": _pick_better_name(prev.get("display_name"), label),
-            "sex": prev.get("sex"),
+            "sex": _pick_better_sex(prev.get("sex"), sex_hint),
             "privileges": prev.get("privileges") or [],
             "metadata": prev.get("metadata") or {},
             "updated_at": _utc_now(),
@@ -312,6 +328,8 @@ def sync_from_payloads(
         _merge_id_names_from_rows(id_names, all_rows)
 
         sex_by_id = infer_sex_from_assignments(all_rows)
+        if users_payload is not None:
+            sex_by_id = _merge_sex_by_id(sex_by_id, parse_sex_from_users(users_payload))
         user_name_map = parse_users(users_payload) if users_payload is not None else {}
 
         member_rows: List[Dict[str, Any]] = []
@@ -322,7 +340,19 @@ def sync_from_payloads(
                 user_names=user_name_map,
                 sex_by_id=sex_by_id,
             )
-        uid_to_member = upsert_members_and_map(sb, congregation_id, member_rows, id_names)
+            for row in member_rows:
+                hid = int(row["hourglass_user_id"])
+                row["display_name"] = _pick_better_name(
+                    row.get("display_name"),
+                    user_name_map.get(str(hid)),
+                )
+        uid_to_member = upsert_members_and_map(
+            sb,
+            congregation_id,
+            member_rows,
+            id_names,
+            sex_by_id=sex_by_id,
+        )
         stats["members"] = len(uid_to_member)
 
         assignment_rows: List[Dict[str, Any]] = []
@@ -426,9 +456,11 @@ def import_rotation_file(settings: Settings, path: Path) -> Dict[str, Any]:
     payload = load_json_file(path)
     priv = None
     users = None
+    meeting = None
     if isinstance(payload, dict):
         priv = payload.get("privileges")
         users = payload.get("users")
+        meeting = payload.get("meetings") or payload.get("meeting")
         sched = payload.get("schedules") or payload.get("schedule") or payload
     else:
         sched = payload
@@ -436,6 +468,7 @@ def import_rotation_file(settings: Settings, path: Path) -> Dict[str, Any]:
         settings,
         schedule_payload=sched,
         privileges_payload=priv,
+        meeting_payload=meeting,
         users_payload=users,
         source=f"file:{path.name}",
     )

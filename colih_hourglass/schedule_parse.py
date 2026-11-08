@@ -37,6 +37,7 @@ if _rotation:
     parse_schedules = _rotation.parse_schedules
     parse_privileges = _rotation.parse_privileges
     parse_users = _rotation.parse_users
+    parse_sex_from_users = _rotation.parse_sex_from_users
     publisher_label = _rotation.publisher_label
     HOURGLASS_SECTIONS = _rotation.HOURGLASS_SECTIONS
     walk_week = _rotation.walk_week
@@ -75,6 +76,12 @@ else:
             if isinstance(week, dict) and week.get("date"):
                 week_count += 1
         return counts, id_names, week_count
+
+    def parse_users(payload: Any) -> Dict[str, str]:
+        return {}
+
+    def parse_sex_from_users(payload: Any) -> Dict[int, str]:
+        return {}
 
 
 AssignmentRow = Tuple[str, str, Optional[int], Optional[str]]  # week_date, category, user_id, label
