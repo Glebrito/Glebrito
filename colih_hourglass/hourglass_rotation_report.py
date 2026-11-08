@@ -515,6 +515,21 @@ def parse_privileges(payload: Any) -> Tuple[Dict[str, str], Dict[str, Set[str]]]
             elif isinstance(privs, list):
                 add_user(uid, name, privs)
 
+    def walk_hourglass_privilege_map(priv_map: Dict[str, Any]) -> None:
+        """Formato Hourglass: { apply1: [uid, ...], chairman: [...] }."""
+        for cat, uids in priv_map.items():
+            if not isinstance(uids, list):
+                continue
+            for raw in uids:
+                if isinstance(raw, bool):
+                    continue
+                try:
+                    uid = str(int(raw))
+                except (TypeError, ValueError):
+                    continue
+                nm = names.get(uid, f"id:{uid}")
+                add_user(uid, nm, [cat])
+
     if isinstance(payload, list):
         walk_users(payload)
     elif isinstance(payload, dict):
@@ -523,12 +538,15 @@ def parse_privileges(payload: Any) -> Tuple[Dict[str, str], Dict[str, Set[str]]]
             if isinstance(val, list):
                 walk_users(val)
             elif isinstance(val, dict) and key == "privileges":
-                for uid, privs in val.items():
-                    name = names.get(str(uid), f"id:{uid}")
-                    if isinstance(privs, list):
-                        add_user(str(uid), name, privs)
+                walk_hourglass_privilege_map(val)
         if payload.get("id") and payload.get("privileges"):
             walk_users([payload])
+        if not names and not eligible:
+            lists_only = [
+                v for v in payload.values() if isinstance(v, list) and v and not isinstance(v[0], dict)
+            ]
+            if lists_only and not any(k in payload for k in ("users", "publishers", "data")):
+                walk_hourglass_privilege_map(payload)
     return names, eligible
 
 
@@ -567,6 +585,55 @@ def parse_users(payload: Any) -> Dict[str, str]:
 
     walk(payload)
     return names
+
+
+def _sex_from_dict(d: Dict[str, Any]) -> Optional[str]:
+    raw = d.get("sex") or d.get("gender")
+    if raw is None:
+        return None
+    v = str(raw).strip().lower()
+    if v in ("female", "f", "feminino", "woman", "w"):
+        return "Female"
+    if v in ("male", "m", "masculino", "man"):
+        return "Male"
+    return None
+
+
+def parse_sex_from_users(payload: Any) -> Dict[int, str]:
+    """Mapeia hourglass user id → Female/Male a partir do export users/publishers."""
+    sex: Dict[int, str] = {}
+
+    def record(obj: Dict[str, Any]) -> None:
+        uid = None
+        for id_field in ("id", "user_id", "publisher_id"):
+            if obj.get(id_field) is not None:
+                try:
+                    uid = int(obj[id_field])
+                except (TypeError, ValueError):
+                    return
+                break
+        if uid is None or uid <= 0:
+            return
+        s = _sex_from_dict(obj)
+        if s:
+            sex[uid] = s
+
+    def walk(obj: Any, depth: int = 0) -> None:
+        if depth > 10:
+            return
+        if isinstance(obj, list):
+            for item in obj:
+                walk(item, depth + 1)
+        elif isinstance(obj, dict):
+            if USER_OBJECT_HINTS.intersection(obj.keys()) or (
+                obj.get("id") is not None and (obj.get("descriptor") or obj.get("firstname"))
+            ):
+                record(obj)
+            for val in obj.values():
+                walk(val, depth + 1)
+
+    walk(payload)
+    return sex
 
 
 def merge_eligible_for_category(

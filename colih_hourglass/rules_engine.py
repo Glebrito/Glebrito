@@ -64,6 +64,9 @@ class SpacingConfig:
 class RulesConfig:
     sisters_only_categories: Set[str] = field(default_factory=lambda: set(SISTER_FM_CATEGORIES))
     spacing: SpacingConfig = field(default_factory=SpacingConfig)
+    hourglass_id_aliases: Dict[str, int] = field(default_factory=dict)
+    category_bans_by_uid: Dict[str, List[str]] = field(default_factory=dict)
+    excluded_hourglass_ids: Set[int] = field(default_factory=set)
 
 
 def normalize_sex(value: Optional[str]) -> Optional[str]:
@@ -90,6 +93,15 @@ def load_rules_from_db(rows: List[Dict[str, Any]], spacing_rows: List[Dict[str, 
             cfg.sisters_only_categories = set(str(x) for x in val)
         elif key == "sisters_only_categories" and isinstance(val, str):
             cfg.sisters_only_categories = set(json.loads(val))
+        elif key == "hourglass_id_aliases" and isinstance(val, dict):
+            cfg.hourglass_id_aliases = {str(k): int(v) for k, v in val.items()}
+        elif key == "category_bans_by_uid" and isinstance(val, dict):
+            cfg.category_bans_by_uid = {
+                str(k): [str(c) for c in v] if isinstance(v, list) else []
+                for k, v in val.items()
+            }
+        elif key == "excluded_hourglass_ids" and isinstance(val, list):
+            cfg.excluded_hourglass_ids = {int(x) for x in val}
     for row in spacing_rows:
         if not row.get("active", True):
             continue
@@ -102,8 +114,55 @@ def load_rules_from_db(rows: List[Dict[str, Any]], spacing_rows: List[Dict[str, 
     return cfg
 
 
+def canonical_hourglass_uid(uid: int, rules: RulesConfig) -> int:
+    mapped = rules.hourglass_id_aliases.get(str(uid))
+    return int(mapped) if mapped is not None else uid
+
+
+def filter_members_for_rules(members: List[Member], rules: RulesConfig) -> List[Member]:
+    duplicate_ids = {int(k) for k in rules.hourglass_id_aliases.keys()}
+    out: List[Member] = []
+    for m in members:
+        if m.hourglass_user_id in rules.excluded_hourglass_ids:
+            continue
+        if m.hourglass_user_id in duplicate_ids:
+            continue
+        out.append(m)
+    return out
+
+
+def category_banned_for_member(member: Member, category: str, rules: RulesConfig) -> bool:
+    uid = member.hourglass_user_id
+    for key in (str(uid), str(canonical_hourglass_uid(uid, rules))):
+        banned = rules.category_bans_by_uid.get(key)
+        if banned and category in banned:
+            return True
+    return False
+
+
+def remap_eligible_by_category(
+    eligible_by_category: Dict[str, Set[str]],
+    rules: RulesConfig,
+) -> Dict[str, Set[str]]:
+    if not rules.hourglass_id_aliases:
+        return eligible_by_category
+    out: Dict[str, Set[str]] = {}
+    for category, ids in eligible_by_category.items():
+        remapped: Set[str] = set()
+        for uid_s in ids:
+            if uid_s in rules.hourglass_id_aliases:
+                remapped.add(str(rules.hourglass_id_aliases[uid_s]))
+            else:
+                remapped.add(uid_s)
+        out[category] = remapped
+    return out
+
+
 def build_history_index(
     history: List[Dict[str, Any]],
+    *,
+    rules: Optional[RulesConfig] = None,
+    members_by_uid: Optional[Dict[int, Member]] = None,
 ) -> Tuple[Dict[str, Dict[str, int]], Dict[int, Dict[str, date]], Dict[int, date]]:
     """Contagens por categoria+member_id, última data por membro+categoria, última FM irmã."""
     counts: Dict[str, Dict[str, int]] = {}
@@ -117,15 +176,19 @@ def build_history_index(
         wd = row.get("week_date")
         if not cat or not wd:
             continue
-        if mid:
+        raw_uid = int(uid) if uid else None
+        key_id = canonical_hourglass_uid(raw_uid, rules) if raw_uid is not None and rules else raw_uid
+        count_mid: Optional[str] = str(mid) if mid else None
+        if members_by_uid and key_id is not None and key_id in members_by_uid:
+            count_mid = members_by_uid[key_id].id
+        if count_mid:
             counts.setdefault(cat, {})
-            counts[cat][str(mid)] = counts[cat].get(str(mid), 0) + 1
+            counts[cat][count_mid] = counts[cat].get(count_mid, 0) + 1
         try:
             d = parse_week_date(str(wd))
         except ValueError:
             continue
-        key_id = int(uid) if uid else None
-        if key_id and mid:
+        if key_id is not None:
             last_role.setdefault(key_id, {})
             prev = last_role[key_id].get(cat)
             if prev is None or d > prev:
@@ -149,10 +212,10 @@ def eligible_for_category(
             continue
         uid = str(m.hourglass_user_id)
         if eligible_ids is not None and uid not in eligible_ids and m.id not in eligible_ids:
-            # privileges opcionais: se vazio, aceita quem apareceu no schedule
-            if eligible_ids:
-                continue
+            continue
         if category in rules.sisters_only_categories and not is_sister(m):
+            continue
+        if category_banned_for_member(m, category, rules):
             continue
         out.append(m)
     return out
@@ -224,7 +287,14 @@ def suggest_week(
     eligible_by_category: Dict[str, Set[str]],
     categories: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
-    counts, last_role, last_sister_fm = build_history_index(history)
+    members = filter_members_for_rules(members, rules)
+    members_by_uid = {m.hourglass_user_id: m for m in members}
+    eligible_by_category = remap_eligible_by_category(eligible_by_category, rules)
+    counts, last_role, last_sister_fm = build_history_index(
+        history,
+        rules=rules,
+        members_by_uid=members_by_uid,
+    )
     cats = categories or SUGGESTION_ORDER
     suggestions: List[Dict[str, Any]] = []
     used_this_week: Set[str] = set()

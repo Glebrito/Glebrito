@@ -6,7 +6,9 @@ from colih_hourglass.rules_engine import (
     RulesConfig,
     SpacingConfig,
     build_history_index,
+    canonical_hourglass_uid,
     eligible_for_category,
+    filter_members_for_rules,
     is_sister,
     suggest_week,
     spacing_ok,
@@ -104,6 +106,61 @@ class TestFairRotation(unittest.TestCase):
         )
         ids = [s["member_id"] for s in suggestions if s.get("member_id")]
         self.assertEqual(len(ids), len(set(ids)))
+
+
+class TestAliasAndBans(unittest.TestCase):
+    def test_alias_history_merges_onto_canonical_member(self):
+        rules = RulesConfig(hourglass_id_aliases={"842476": 3040773})
+        canon = m("canon", 3040773, "Adriana Souza", "Female")
+        dupe = m("dupe", 842476, "Adriana", "Female")
+        members = filter_members_for_rules([canon, dupe], rules)
+        self.assertEqual([x.hourglass_user_id for x in members], [3040773])
+        history = [
+            {
+                "member_id": "dupe",
+                "hourglass_user_id": 842476,
+                "week_date": "2026-01-01",
+                "role_category": "chairman",
+            },
+            {
+                "member_id": "canon",
+                "hourglass_user_id": 3040773,
+                "week_date": "2026-01-08",
+                "role_category": "chairman",
+            },
+        ]
+        members_by_uid = {canon.hourglass_user_id: canon}
+        counts, last_role, _ = build_history_index(
+            history, rules=rules, members_by_uid=members_by_uid
+        )
+        self.assertEqual(counts["chairman"]["canon"], 2)
+        self.assertEqual(last_role[3040773]["chairman"].isoformat(), "2026-01-08")
+        self.assertEqual(canonical_hourglass_uid(842476, rules), 3040773)
+
+    def test_category_ban_excludes_spiritual_gems(self):
+        rules = RulesConfig(category_bans_by_uid={"3040773": ["spiritual_gems"]})
+        adriana = m("a1", 3040773, "Adriana Souza", "Female")
+        other = m("b1", 99, "Outra", "Female")
+        pool = eligible_for_category([adriana, other], "spiritual_gems", None, rules)
+        self.assertEqual({x.display_name for x in pool}, {"Outra"})
+        pool_chair = eligible_for_category([adriana, other], "chairman", None, rules)
+        self.assertEqual(len(pool_chair), 2)
+
+    def test_suggest_week_never_picks_banned_category(self):
+        rules = RulesConfig(category_bans_by_uid={"42": ["auxiliary_counselor"]})
+        members = [
+            m("only", 42, "Benicio", "Male"),
+            m("alt", 43, "Outro", "Male"),
+        ]
+        suggestions = suggest_week(
+            target_week=date(2026, 10, 26),
+            members=members,
+            history=[],
+            rules=rules,
+            eligible_by_category={},
+            categories=["auxiliary_counselor"],
+        )
+        self.assertEqual(suggestions[0]["hourglass_user_id"], 43)
 
 
 class TestHistoryIndex(unittest.TestCase):
