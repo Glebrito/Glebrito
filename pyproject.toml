@@ -1,0 +1,17 @@
+[project]
+name = "colih-hourglass"
+version = "0.1.0"
+description = "Automação de designações Hourglass → Supabase (Colih)"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.scripts]
+colih-hourglass = "colih_hourglass.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["colih_hourglass*"]

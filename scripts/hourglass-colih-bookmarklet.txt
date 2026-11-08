@@ -1,0 +1,10 @@
+Colih — bookmarklet "Atualizar Supabase" no Hourglass
+========================================================
+
+1. Abra `scripts/hourglass-colih-bookmarklet.url` no Bloco de notas (uma linha).
+2. Crie um favorito no Chrome → nome **Atualizar Supabase (Colih)** → cole a linha inteira como URL.
+3. No Hourglass logado, clique o favorito na barra (equivalente ao userscript Tampermonkey).
+
+Alternativa recomendada: Tampermonkey → criar script → colar `hourglass-colih-userscript.js`.
+
+Painel offline: execute `scripts\iniciar-painel.bat` no PC.
